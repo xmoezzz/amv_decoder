@@ -146,4 +146,4 @@ Both packet types use a JPEG-like coding model for 8×8 blocks:
 
 ## License
 
-Dual-licensed under MPL-2.0 (see `Cargo.toml`).
+MPL-2.0 (see `Cargo.toml`).
