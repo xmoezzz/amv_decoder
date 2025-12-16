@@ -3,6 +3,8 @@ name = "amv_decoder"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"
+description = "Experimental AMV parser and decoder for KiriKiri2 / KiriKiriZ engine videos."
+repository = "https://github.com/xmoezzz/amv_decoder"
 
 [dependencies]
 anyhow = "1"
