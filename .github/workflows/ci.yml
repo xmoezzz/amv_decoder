@@ -1,56 +1,46 @@
-name: CI
+name: Build
 
 on:
   push:
-    branches: [ master ]
+    branches: ["master"]
   pull_request:
+  workflow_dispatch:
 
 env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
+  BIN_NAME: amv_decoder
 
 jobs:
-  lint:
-    name: Lint (fmt + clippy)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: rustfmt
-        run: cargo fmt --all -- --check
-
-  test:
-    name: Test (${{ matrix.os }})
+  build:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-13
-          - macos-14
+        include:
+          - os: ubuntu-latest
+            label: linux-x86_64
+          - os: windows-latest
+            label: windows-x86_64
+          - os: macos-13
+            label: macos-x86_64
+          - os: macos-14
+            label: macos-arm64
+
     runs-on: ${{ matrix.os }}
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Build
-        run: cargo build --all --all-features
+      - name: Build (release)
+        run: cargo build --release
 
-      - name: Test
-        run: cargo test --all --all-features
+      - name: Upload binary (no compression)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BIN_NAME }}-${{ matrix.label }}
+          path: |
+            target/release/${{ env.BIN_NAME }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          if-no-files-found: error
+          retention-days: 14
