@@ -125,8 +125,8 @@ impl AmvDecoder {
             rw,
             rh,
             /*has_alpha=*/ false,
-            /*q_chroma=*/ &self.q.q0,
-            /*q_luma=*/ &self.q.q1,
+            /*q_chroma=*/ &self.q.q1,
+            /*q_luma=*/ &self.q.q0,
             /*q_alpha=*/ None,
             rgba,
         )
@@ -153,8 +153,8 @@ impl AmvDecoder {
             rw,
             rh,
             has_alpha,
-            &self.q.q0,
             &self.q.q1,
+            &self.q.q0,
             q_alpha,
             rgba,
         )
@@ -162,10 +162,13 @@ impl AmvDecoder {
 
     /// Decode a JPEG-like macroblock stream into RGBA.
     ///
-    /// Layout assumption derived from disassembly:
+    /// Layout derived from DLL/sqlite decompilation:
     /// - 4:2:0 macroblocks
     /// - 6 blocks per MB: Cb, Cr, Y0, Y1, Y2, Y3
     /// - 10 blocks per MB (alpha mode): Cb, Cr, Y0..Y3, A0..A3
+    /// - q1 is used for the first two chroma blocks
+    /// - q0 is used for the four luma blocks
+    /// - q2 is used for the four alpha blocks in mode B
     fn decode_rect_dct(
         &self,
         payload: &[u8],

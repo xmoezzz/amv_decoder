@@ -109,15 +109,20 @@ impl AmvHeader {
 /// Global quant tables in file order.
 /// Mode A: q0 + q1 (q2 is absent).
 /// Mode B: q0 + q1 + q2.
+///
+/// DLL/sqlite-confirmed semantic mapping:
+/// - q0 = luma
+/// - q1 = chroma
+/// - q2 = alpha (mode B only).
 // Quant tables are stored as Vec<u8> (length 64) for compatibility with older serde/toolchains that
 // may not implement Serialize/Deserialize for fixed-size arrays > 32.
 #[derive(Debug, Clone, Serialize)]
 pub struct QuantTables {
-    /// Quantization table 0 (64 bytes).
+    /// Quantization table 0 (64 bytes), used for luma blocks.
     pub q0: Vec<u8>,
-    /// Quantization table 1 (64 bytes).
+    /// Quantization table 1 (64 bytes), used for chroma blocks.
     pub q1: Vec<u8>,
-    /// Optional quantization table 2 (64 bytes) for mode B.
+    /// Optional quantization table 2 (64 bytes) for mode B alpha blocks.
     pub q2: Option<Vec<u8>>,
 }
 impl QuantTables {
