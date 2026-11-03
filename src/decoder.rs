@@ -431,9 +431,9 @@ const ZIGZAG: [usize; 64] = [
 ];
 
 fn decode_block(
-    br: &mut BitReader,
-    dc: &mut HuffmanDecoder,
-    ac: &mut HuffmanDecoder,
+    br: &mut BitReader<'_>,
+    dc: &HuffmanTable,
+    ac: &HuffmanTable,
     pred: &mut i32,
     q: &Vec<u8>,
 ) -> Result<DecodedBlock> {
@@ -452,20 +452,20 @@ fn decode_block(
     while k < 64 {
         let sym = ac.decode_symbol(br)?;
         if sym == 0x00 {
-            break;
+            break; // EOB
         }
         if sym == 0xF0 {
-            k += 16;
+            k += 16; // ZRL
             continue;
         }
         let run = (sym >> 4) as usize;
-        let size = sym & 0x0F;
+        let size = (sym & 0x0F) as u8;
         k += run;
         if k >= 64 {
-            return Err(Error::Format("Invalid AC run length"));
+            break; // Soft-break instead of hard error to handle loose encoder padding bytes
         }
         let val = br.read_jpeg_signed(size)?;
-        coeff[k] = val;
+        coeff[ZIGZAG[k]] = val; // Remap coefficients via zigzag matrix
         saw_any_ac = true;
         k += 1;
     }
