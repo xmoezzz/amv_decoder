@@ -410,7 +410,8 @@ struct DecodedBlock {
 
 impl DecodedBlock {
     fn dc_only_pixels(&self) -> [u8; 64] {
-        let v = idct_dc_only(self.dc) as i32 + 128;
+        let corrected_dc = self.dc / 4;
+        let v = idct_dc_only(corrected_dc) as i32 + 128;
         let v = v.clamp(0, 255) as u8;
         [v; 64]
     }
@@ -430,75 +431,79 @@ const ZIGZAG: [usize; 64] = [
 ];
 
 fn decode_block(
-    br: &mut BitReader<'_>,
-    dc: &HuffmanTable,
-    ac: &HuffmanTable,
+    br: &mut BitReader,
+    dc: &mut HuffmanDecoder,
+    ac: &mut HuffmanDecoder,
     pred: &mut i32,
     q: &Vec<u8>,
 ) -> Result<DecodedBlock> {
-    // DC.
+    // 1. Decode DC Coefficient
     let s = dc.decode_symbol(br)?;
     let diff = br.read_jpeg_signed(s)?;
+    
+    // The predictor must store the raw, unscaled difference value to maintain bitstream sync.
     *pred += diff;
     let mut coeff = [0i32; 64];
     coeff[0] = *pred;
 
-    // AC.
+    // 2. Decode AC Coefficients (Zig-Zag order)
     let mut k: usize = 1;
     let mut saw_any_ac = false;
     while k < 64 {
         let sym = ac.decode_symbol(br)?;
         if sym == 0x00 {
-            // EOB.
             break;
         }
         if sym == 0xF0 {
-            // ZRL.
             k += 16;
             continue;
         }
         let run = (sym >> 4) as usize;
-        let size = (sym & 0x0F) as u8;
+        let size = sym & 0x0F;
         k += run;
         if k >= 64 {
-            break;
+            return Err(Error::Format("Invalid AC run length"));
         }
-        let v = br.read_jpeg_signed(size)?;
-        coeff[ZIGZAG[k]] = v;
+        let val = br.read_jpeg_signed(size)?;
+        coeff[k] = val;
         saw_any_ac = true;
         k += 1;
     }
     let ac_empty = !saw_any_ac;
 
-    // Dequantize. The original code multiplies then shifts left by 2.
+    // 3. Dequantization: Apply the KiriKiri-specific scaling factor of 4 (<< 2)
     let mut deq = [0i32; 64];
     for i in 0..64 {
         let qi = q[i] as i32;
         deq[i] = coeff[i] * qi * 4;
     }
-    let dc_deq = deq[0];
 
-    // IDCT.
+    // 4. Perform IDCT and rescale spatial coefficients (fixes macroblock artifacts)
     let spatial = idct8x8(&deq);
     let mut px = [0u8; 64];
     for i in 0..64 {
-        let v = spatial[i] as i32 + 128;
+        // The IDCT output needs to be scaled down by 4 to compensate for pre-IDCT scaling.
+        let val = (spatial[i] as i32) / 4;
+        let v = val + 128;
         px[i] = v.clamp(0, 255) as u8;
     }
 
-    Ok(DecodedBlock { pixels: px, dc: dc_deq, ac_empty })
+    Ok(DecodedBlock { pixels: px, dc: deq[0], ac_empty })
 }
 
 #[inline]
 fn ycbcr_to_rgb(y: i32, cb: i32, cr: i32) -> (u8, u8, u8) {
-    // Full-range JPEG-like conversion.
-    let cbf = (cb - 128) as f64;
-    let crf = (cr - 128) as f64;
-    let yf = y as f64;
-    let r = yf + 1.402 * crf;
-    let g = yf - 0.344136 * cbf - 0.714136 * crf;
-    let b = yf + 1.772 * cbf;
-    (r.round().clamp(0.0, 255.0) as u8,
-     g.round().clamp(0.0, 255.0) as u8,
-     b.round().clamp(0.0, 255.0) as u8)
+    // Limited-range BT.601 MPEG/KiriKiri color space conversion.
+    // Optimized using fixed-point integer arithmetic to match the engine's SIMD pipeline behavior.
+    let y_scaled = (y - 16) * 1192;
+    let cb_translated = cb - 128;
+    let cr_translated = cr - 128;
+
+    let r = (y_scaled + 1634 * cr_translated) >> 10;
+    let g = (y_scaled - 400 * cb_translated - 833 * cr_translated) >> 10;
+    let b = (y_scaled + 2066 * cb_translated) >> 10;
+
+    (r.clamp(0, 255) as u8,
+     g.clamp(0, 255) as u8,
+     b.clamp(0, 255) as u8)
 }
